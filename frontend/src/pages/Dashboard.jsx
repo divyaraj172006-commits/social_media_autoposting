@@ -54,6 +54,17 @@ function Dashboard() {
         }
     };
 
+    const disconnectLinkedIn = async () => {
+        if (!window.confirm("Are you sure you want to disconnect your LinkedIn account?")) return;
+        try {
+            await axios.delete(`${API}/linkedin/disconnect`);
+            setLinkedinConnected(false);
+            setStatusMessage("🔓 LinkedIn account disconnected. You can now connect a different account.");
+        } catch (err) {
+            alert("Error: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
     const postToLinkedIn = async () => {
         if (!generatedText.trim()) return alert("Generate content first!");
         if (!linkedinConnected) return alert("Please connect your LinkedIn account first!");
@@ -85,8 +96,13 @@ function Dashboard() {
             <div style={styles.card}>
                 <h2 style={styles.cardTitle}>🔗 LinkedIn Account</h2>
                 {linkedinConnected ? (
-                    <div style={styles.connectedBadge}>
-                        ✅ LinkedIn Connected
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                        <div style={{ ...styles.connectedBadge, flex: 1 }}>
+                            ✅ LinkedIn Connected
+                        </div>
+                        <button onClick={disconnectLinkedIn} style={styles.btnDisconnect}>
+                            Disconnect
+                        </button>
                     </div>
                 ) : (
                     <button onClick={loginLinkedIn} style={styles.btnLinkedIn}>
@@ -284,6 +300,17 @@ const styles = {
         borderRadius: 8,
         cursor: "pointer",
         width: "100%",
+    },
+    btnDisconnect: {
+        padding: "12px 18px",
+        fontSize: 13,
+        fontWeight: 600,
+        color: "#fff",
+        background: "#e53935",
+        border: "none",
+        borderRadius: 8,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
     },
 };
 

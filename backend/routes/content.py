@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import google.generativeai as genai
+from google import genai
 from config import GEMINI_API_KEY
 
 router = APIRouter(prefix="/content", tags=["Content"])
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 👇 CHANGE THE MODEL HERE — Options: "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"
-model = genai.GenerativeModel("gemini-2.5-flash-lite")
+# 👇 CHANGE THE MODEL HERE — Options: "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"
+MODEL_NAME = "gemini-2.5-flash"
 
 
 class ContentRequest(BaseModel):
@@ -37,7 +37,10 @@ Guidelines:
 """
 
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt
+        )
         if response and response.text:
             return {"generated_text": response.text}
         else:
@@ -45,4 +48,5 @@ Guidelines:
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[ERROR] Gemini API error: {e}")
         raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")

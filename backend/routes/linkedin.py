@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from urllib.parse import quote
 import requests
+import os
 
 from db import get_db
 from models import LinkedInUser
@@ -9,19 +11,23 @@ from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
 router = APIRouter(prefix="/linkedin", tags=["LinkedIn"])
 
-FRONTEND_URL = "http://localhost:5176"
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 
 # 🔹 Step 1: Login — redirects user to LinkedIn OAuth
 @router.get("/login")
 def login():
+    encoded_redirect = quote(REDIRECT_URI, safe="")
     url = (
         "https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
         f"&client_id={CLIENT_ID}"
-        f"&redirect_uri={REDIRECT_URI}"
-        "&scope=openid profile w_member_social"
+        f"&redirect_uri={encoded_redirect}"
+        "&scope=openid%20profile%20w_member_social"
+        "&prompt=login"
     )
+    print(f"[DEBUG] OAuth URL: {url}")
+    print(f"[DEBUG] REDIRECT_URI: {REDIRECT_URI}")
     return {"auth_url": url}
 
 
@@ -29,6 +35,7 @@ def login():
 @router.get("/callback")
 def callback(code: str, db: Session = Depends(get_db)):
     try:
+        print(f"[DEBUG] Callback received with code: {code[:10]}...")
         # Exchange code for access token
         token_url = "https://www.linkedin.com/oauth/v2/accessToken"
         data = {
@@ -41,6 +48,7 @@ def callback(code: str, db: Session = Depends(get_db)):
 
         res = requests.post(token_url, data=data)
         token_data = res.json()
+        print(f"[DEBUG] Token response: {res.status_code} - {token_data}")
 
         if "access_token" not in token_data:
             return RedirectResponse(f"{FRONTEND_URL}?linkedin=error&message=token_failed")
@@ -78,6 +86,17 @@ def status(db: Session = Depends(get_db)):
     if user:
         return {"connected": True, "linkedin_id": user.linkedin_id}
     return {"connected": False}
+
+
+# 🔹 Disconnect LinkedIn account
+@router.delete("/disconnect")
+def disconnect(db: Session = Depends(get_db)):
+    user = db.query(LinkedInUser).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="No LinkedIn account connected.")
+    db.delete(user)
+    db.commit()
+    return {"message": "LinkedIn account disconnected successfully."}
 
 
 # 🔹 Step 3: Post Content
