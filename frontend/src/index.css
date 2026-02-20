@@ -1,43 +1,32 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer components {
-    .glass-card {
-        @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl;
-    }
-
-    .neon-border {
-        @apply border border-white/10 relative overflow-hidden;
-
-        &::after {
-            content: '';
-            @apply absolute inset-0 opacity-0 transition-opacity duration-500 bg-gradient-to-r from-cyber-blue/20 to-cyber-purple/20;
-        }
-
-        &:hover::after {
-            @apply opacity-100;
-        }
-    }
-}
-
+/* ──────────────────────────────────────────────
+   CSS Custom Properties — Web3 Design Tokens
+────────────────────────────────────────────── */
 :root {
-    --bg-color: #0a1628;
-    --glass-bg: rgba(26, 39, 68, 0.4);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --primary: #0077b5;
-    --primary-hover: #005885;
+    --bg-color: #040b14;
+    --surface-1: rgba(13, 27, 51, 0.6);
+    --surface-2: rgba(255, 255, 255, 0.04);
+    --glass-border: rgba(255, 255, 255, 0.08);
+
+    --cyber-blue: #4facfe;
+    --cyber-cyan: #00f2fe;
+    --cyber-purple: #f093fb;
+    --cyber-pink: #f5576c;
+    --cyber-violet: #a855f7;
+    --cyber-green: #00ff88;
+
     --text-primary: #ffffff;
     --text-secondary: #94a3b8;
-    --primary-glow: radial-gradient(rgba(1, 65, 255, 0.4), rgba(1, 65, 255, 0));
-    --secondary-glow: linear-gradient(to bottom right,
-            rgba(1, 65, 255, 0),
-            rgba(1, 65, 255, 0),
-            rgba(1, 65, 255, 0.3));
+    --text-muted: #4a5568;
+
+    --neon-glow-blue: 0 0 20px rgba(79, 172, 254, 0.5);
+    --neon-glow-purple: 0 0 20px rgba(240, 147, 251, 0.5);
 }
 
+/* ──────────────────────────────────────────────
+   Base Reset
+────────────────────────────────────────────── */
 * {
     margin: 0;
     padding: 0;
@@ -51,16 +40,20 @@ body {
     min-height: 100vh;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
     min-height: 100vh;
 }
 
+/* ──────────────────────────────────────────────
+   Global Keyframes
+────────────────────────────────────────────── */
 @keyframes fadeInUp {
     from {
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateY(32px);
     }
 
     to {
@@ -69,29 +62,207 @@ body {
     }
 }
 
-@keyframes shimmer {
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes floatBlob {
+
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    33% {
+        transform: translate(30px, -50px) scale(1.1);
+    }
+
+    66% {
+        transform: translate(-20px, 20px) scale(0.9);
+    }
+}
+
+@keyframes spinnerAnim {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes borderGlowSpin {
     0% {
-        transform: translateX(-100%);
+        background-position: 0% 50%;
     }
 
     100% {
-        transform: translateX(100%);
+        background-position: 300% 50%;
     }
 }
 
+@keyframes pulseGlow {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes driftSlow {
+    0% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+
+    25% {
+        transform: translate(40px, -30px) rotate(3deg) scale(1.02);
+    }
+
+    50% {
+        transform: translate(-20px, -60px) rotate(-2deg) scale(0.98);
+    }
+
+    75% {
+        transform: translate(-40px, 10px) rotate(4deg) scale(1.03);
+    }
+
+    100% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+}
+
+@keyframes meshRotate {
+    0% {
+        transform: rotate(0deg) scale(1);
+    }
+
+    50% {
+        transform: rotate(180deg) scale(1.05);
+    }
+
+    100% {
+        transform: rotate(360deg) scale(1);
+    }
+}
+
+@keyframes lightBeamSweep {
+    0% {
+        transform: translateX(-100%) rotate(25deg);
+        opacity: 0;
+    }
+
+    15% {
+        opacity: 0.03;
+    }
+
+    50% {
+        opacity: 0.06;
+    }
+
+    85% {
+        opacity: 0.03;
+    }
+
+    100% {
+        transform: translateX(200%) rotate(25deg);
+        opacity: 0;
+    }
+}
+
+@keyframes lightBeamSweep2 {
+    0% {
+        transform: translateX(200%) rotate(-15deg);
+        opacity: 0;
+    }
+
+    15% {
+        opacity: 0.02;
+    }
+
+    50% {
+        opacity: 0.04;
+    }
+
+    85% {
+        opacity: 0.02;
+    }
+
+    100% {
+        transform: translateX(-100%) rotate(-15deg);
+        opacity: 0;
+    }
+}
+
+@keyframes orbPulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.6;
+        filter: blur(60px);
+    }
+
+    50% {
+        transform: scale(1.15);
+        opacity: 0.8;
+        filter: blur(70px);
+    }
+}
+
+/* ──────────────────────────────────────────────
+   Scrollbar
+────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--bg-color);
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    background: linear-gradient(180deg, rgba(79, 172, 254, 0.3), rgba(168, 85, 247, 0.3));
+    border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: linear-gradient(180deg, rgba(79, 172, 254, 0.5), rgba(168, 85, 247, 0.5));
+}
+
+/* ──────────────────────────────────────────────
+   Input / Select Focus States
+────────────────────────────────────────────── */
+input:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+    border-color: rgba(79, 172, 254, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1), inset 0 0 0 1px rgba(79, 172, 254, 0.2) !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: rgba(148, 163, 184, 0.5);
+}
+
+/* ──────────────────────────────────────────────
+   Canvas layers
+────────────────────────────────────────────── */
+#particle-canvas {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
 }
