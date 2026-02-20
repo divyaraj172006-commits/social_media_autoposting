@@ -4,3 +4,6 @@ sqlalchemy
 requests
 python-dotenv
 google-genai
+python-multipart
+requests-oauthlib
+pillow

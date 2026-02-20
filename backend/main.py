@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from db import engine, Base
-from routes import linkedin, content
+from routes import linkedin, content, twitter
 
 app = FastAPI()
 
-# Allow frontend to talk to backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,8 +17,9 @@ Base.metadata.create_all(bind=engine)
 
 app.include_router(linkedin.router)
 app.include_router(content.router)
+app.include_router(twitter.router)
 
 
 @app.get("/")
 def home():
-    return {"message": "LinkedIn Poster Running"}
+    return {"message": "Social Media Poster Running"}
