@@ -9,3 +9,4 @@ requests-oauthlib
 pillow
 passlib[bcrypt]
 python-jose[cryptography]
+email-validator
