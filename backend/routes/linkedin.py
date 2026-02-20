@@ -12,7 +12,7 @@ from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
 router = APIRouter(prefix="/linkedin", tags=["LinkedIn"])
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://social-media-autoposting.vercel.app")
 
 
 # 🔹 Step 1: Login — redirects user to LinkedIn OAuth
