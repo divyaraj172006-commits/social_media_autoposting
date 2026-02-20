@@ -20,7 +20,10 @@ app.include_router(content.router)
 app.include_router(twitter.router)
 app.include_router(auth.router)
 
-
 @app.get("/")
 def home():
-    return {"message": "Social Media Poster Running"}
+    return {"message": "Social Media Poster v2 Running", "status": "online"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
