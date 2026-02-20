@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from db import engine, Base
-from routes import linkedin, content, twitter
+from routes import linkedin, content, twitter, auth
 
 app = FastAPI()
 
@@ -18,6 +18,7 @@ Base.metadata.create_all(bind=engine)
 app.include_router(linkedin.router)
 app.include_router(content.router)
 app.include_router(twitter.router)
+app.include_router(auth.router)
 
 
 @app.get("/")

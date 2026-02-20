@@ -18,3 +18,11 @@ class TwitterUser(Base):
     access_token = Column(String)
     access_token_secret = Column(String)
     screen_name = Column(String)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    hashed_password = Column(String)

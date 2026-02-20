@@ -1,9 +1,11 @@
 import axios from "axios";
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 
 const API = import.meta.env.VITE_API_URL || "https://social-media-autoposting.onrender.com";
 
 function Dashboard() {
+    const navigate = useNavigate();
     const [topic, setTopic] = useState("");
     const [tone, setTone] = useState("professional");
     const [length, setLength] = useState("medium");
@@ -17,31 +19,41 @@ function Dashboard() {
     const [imagePrompt, setImagePrompt] = useState("");
     const [generatingImage, setGeneratingImage] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
-
     const [imagePreview, setImagePreview] = useState(null);
     const [posting, setPosting] = useState(false);
     const [charCount, setCharCount] = useState(0);
     const [postTo, setPostTo] = useState({ linkedin: true, twitter: false });
     const fileInputRef = useRef(null);
+
+    const handleLogout = () => {
+        localStorage.removeItem("token");
+        navigate("/login");
+    };
+
     useEffect(() => {
+        const token = localStorage.getItem("token");
+        const headers = { Authorization: `Bearer ${token}` };
+
         const params = new URLSearchParams(window.location.search);
         if (params.get("linkedin") === "success") {
             showStatus("✅ LinkedIn connected!", "success");
-            window.history.replaceState({}, "", "/");
+            window.history.replaceState({}, "", "/dashboard");
         } else if (params.get("linkedin") === "error") {
             showStatus("❌ LinkedIn: " + (params.get("message") || "Failed"), "error");
-            window.history.replaceState({}, "", "/");
+            window.history.replaceState({}, "", "/dashboard");
         }
-        axios.get(`${API}/linkedin/status`)
+
+        axios.get(`${API}/linkedin/status`, { headers })
             .then(res => setLinkedinConnected(res.data.connected))
             .catch(() => { });
-        axios.get(`${API}/twitter/status`)
+
+        axios.get(`${API}/twitter/status`, { headers })
             .then(res => {
                 setTwitterConnected(res.data.connected);
                 if (res.data.screen_name) setTwitterScreenName(res.data.screen_name);
             })
             .catch(() => { });
-    }, []);
+    }, [navigate]);
 
     useEffect(() => { setCharCount(generatedText.length); }, [generatedText]);
 
@@ -98,7 +110,6 @@ function Dashboard() {
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
-
     const handleGenerateImage = async () => {
         if (!imagePrompt.trim()) { showStatus("⚠️ Enter an image prompt first!", "error"); return; }
         setGeneratingImage(true);
@@ -112,7 +123,6 @@ function Dashboard() {
                 const blob = await fetchRes.blob();
                 fileObj = new File([blob], "generated_image.jpg", { type: "image/jpeg" });
             } else if (res.data.image_url) {
-                // Fallback: Use URL directly if backend couldn't download it
                 const imageRes = await fetch(res.data.image_url);
                 const blob = await imageRes.blob();
                 fileObj = new File([blob], "generated_image.jpg", { type: "image/jpeg" });
@@ -129,7 +139,6 @@ function Dashboard() {
     };
 
     const postContent = async () => {
-
         if (!generatedText.trim()) { showStatus("⚠️ Write or generate content first!", "error"); return; }
         const targets = [];
         if (postTo.linkedin && linkedinConnected) targets.push("linkedin");
@@ -197,6 +206,11 @@ function Dashboard() {
                             <h1 style={styles.title}>Social Media Poster</h1>
                             <p style={styles.subtitle}>✨ AI-powered posts for LinkedIn & Twitter/X</p>
                         </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', zIndex: 2 }}>
+                        <button onClick={handleLogout} style={styles.btnLogout}>
+                            Logout
+                        </button>
                     </div>
                     <svg width="160" height="90" viewBox="0 0 160 90" fill="none" style={styles.headerSvg}>
                         <circle cx="25" cy="22" r="4" fill="rgba(255,255,255,0.15)" />
@@ -316,7 +330,7 @@ function Dashboard() {
                     </button>
                 </div>
 
-                {/* Image Upload */}
+                {/* Image Upload/Generation */}
                 <div style={styles.card} className="card-animate">
                     <div style={styles.cardHeader}>
                         <div style={{ ...styles.cardIconCircle, background: "linear-gradient(135deg, #4facfe, #00f2fe)" }}>
@@ -326,11 +340,10 @@ function Dashboard() {
                         <span style={styles.badge}>Optional</span>
                     </div>
 
-
                     <div style={styles.imageGenRow}>
                         <input
                             type="text"
-                            placeholder="Describe an image to generate (e.g., 'A futuristic office with plants')..."
+                            placeholder="Describe an image to generate..."
                             value={imagePrompt}
                             onChange={(e) => setImagePrompt(e.target.value)}
                             style={styles.inputImageGen}
@@ -346,11 +359,7 @@ function Dashboard() {
                     </div>
 
                     {!imagePreview ? (
-
-                        <div style={styles.dropZone} onClick={() => fileInputRef.current?.click()}
-                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#4facfe"; e.currentTarget.style.background = "rgba(79,172,254,0.06)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(79,172,254,0.25)"; e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
-                        >
+                        <div style={styles.dropZone} onClick={() => fileInputRef.current?.click()}>
                             <div style={styles.dropZoneGraphic}>
                                 <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
                                     <rect x="4" y="8" width="44" height="36" rx="6" stroke="#4facfe" strokeWidth="2" fill="rgba(79,172,254,0.06)" />
@@ -370,8 +379,8 @@ function Dashboard() {
                                 <button onClick={removeImage} style={styles.btnRemoveImage}>✕ Remove</button>
                             </div>
                             <div style={styles.imageFileName}>
-                                📎 {selectedImage?.name}
-                                <span style={styles.imageSizeBadge}>{(selectedImage?.size / 1024).toFixed(0)} KB</span>
+                                📎 {selectedImage?.name || "Generated Image"}
+                                <span style={styles.imageSizeBadge}>{selectedImage ? (selectedImage.size / 1024).toFixed(0) : 0} KB</span>
                             </div>
                         </div>
                     )}
@@ -468,11 +477,26 @@ function Dashboard() {
                 .card-animate:nth-child(1) { animation-delay: 0.05s; }
                 .card-animate:nth-child(2) { animation-delay: 0.1s; }
                 .card-animate:nth-child(3) { animation-delay: 0.15s; }
-                .card-animate:nth-child(4) { animation-delay: 0.2s; }
+                .card-animate:nth-child(4) { animation-delay: 0.20s; }
                 .card-animate:nth-child(5) { animation-delay: 0.25s; }
-                .card-animate:nth-child(6) { animation-delay: 0.3s; }
+                .card-animate:nth-child(6) { animation-delay: 0.30s; }
+                
+                @keyframes fadeInUp {
+                  from { opacity: 0; transform: translateY(20px); }
+                  to { opacity: 1; transform: translateY(0); }
+                }
+                
+                @keyframes float {
+                  0%, 100% { transform: translateY(0) scale(1); }
+                  50% { transform: translateY(-20px) scale(1.05); }
+                }
+                
+                @keyframes fadeIn {
+                  from { opacity: 0; }
+                  to { opacity: 1; }
+                }
             `}</style>
-        </div >
+        </div>
     );
 }
 
@@ -486,6 +510,7 @@ const styles = {
 
     header: { background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%)", borderRadius: 18, padding: "22px 24px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 8px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08)", position: "relative", overflow: "hidden" },
     headerGlow: { position: "absolute", top: -50, left: -50, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(79,172,254,0.08) 0%, transparent 70%)" },
+    btnLogout: { padding: "8px 16px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#ef9a9a", fontSize: "12px", fontWeight: "600", cursor: "pointer", transition: "all 0.2s" },
     headerContent: { display: "flex", alignItems: "center", gap: 14, zIndex: 1 },
     headerIcon: { width: 50, height: 50, borderRadius: 14, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.1)" },
     headerSvg: { position: "absolute", right: 10, top: 0, zIndex: 0 },
