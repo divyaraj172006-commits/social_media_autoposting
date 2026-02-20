@@ -1,7 +1,7 @@
 import axios from "axios";
 import { useState, useEffect, useRef } from "react";
 
-const API = "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL || "https://social-media-autoposting.onrender.com";
 
 function Dashboard() {
     const [topic, setTopic] = useState("");
