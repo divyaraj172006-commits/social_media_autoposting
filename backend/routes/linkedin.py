@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from typing import Optional
 import requests
 import os
@@ -9,6 +9,7 @@ import os
 from db import get_db
 from models import LinkedInUser
 from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
+from routes.auth import get_current_user, User
 
 router = APIRouter(prefix="/linkedin", tags=["LinkedIn"])
 
@@ -17,26 +18,30 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://social-media-autoposting.verce
 
 # 🔹 Step 1: Login — redirects user to LinkedIn OAuth
 @router.get("/login")
-def login():
+def login(current_user: User = Depends(get_current_user)):
     encoded_redirect = quote(REDIRECT_URI, safe="")
+    # Use 'state' to pass the user ID so we can link it in the callback
+    state = str(current_user.id)
     url = (
         "https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
         f"&client_id={CLIENT_ID}"
         f"&redirect_uri={encoded_redirect}"
+        f"&state={state}"
         "&scope=openid%20profile%20w_member_social"
         "&prompt=login"
     )
     print(f"[DEBUG] OAuth URL: {url}")
-    print(f"[DEBUG] REDIRECT_URI: {REDIRECT_URI}")
     return {"auth_url": url}
 
 
 # 🔹 Step 2: Callback — LinkedIn redirects here after user approves
 @router.get("/callback")
-def callback(code: str, db: Session = Depends(get_db)):
+def callback(code: str, state: str, db: Session = Depends(get_db)):
     try:
-        print(f"[DEBUG] Callback received with code: {code[:10]}...")
+        user_id = int(state)
+        print(f"[DEBUG] Callback received for user {user_id} with code: {code[:10]}...")
+        
         # Exchange code for access token
         token_url = "https://www.linkedin.com/oauth/v2/accessToken"
         data = {
@@ -64,26 +69,28 @@ def callback(code: str, db: Session = Depends(get_db)):
         if not linkedin_id:
             return RedirectResponse(f"{FRONTEND_URL}?linkedin=error&message=no_user_id")
 
-        # Save or update user in DB
-        existing_user = db.query(LinkedInUser).filter(LinkedInUser.linkedin_id == linkedin_id).first()
-        if existing_user:
-            existing_user.access_token = access_token
+        # Save or update linked account for THIS user
+        existing_account = db.query(LinkedInUser).filter(LinkedInUser.user_id == user_id).first()
+        if existing_account:
+            existing_account.linkedin_id = linkedin_id
+            existing_account.access_token = access_token
         else:
-            user = LinkedInUser(linkedin_id=linkedin_id, access_token=access_token)
-            db.add(user)
+            new_account = LinkedInUser(user_id=user_id, linkedin_id=linkedin_id, access_token=access_token)
+            db.add(new_account)
         db.commit()
 
         # Redirect back to frontend with success
         return RedirectResponse(f"{FRONTEND_URL}?linkedin=success")
 
     except Exception as e:
-        return RedirectResponse(f"{FRONTEND_URL}?linkedin=error&message={str(e)}")
+        print(f"[ERROR] LinkedIn callback: {e}")
+        return RedirectResponse(f"{FRONTEND_URL}?linkedin=error&message={quote(str(e))}")
 
 
 # 🔹 Check if a LinkedIn account is connected
 @router.get("/status")
-def status(db: Session = Depends(get_db)):
-    user = db.query(LinkedInUser).first()
+def status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = db.query(LinkedInUser).filter(LinkedInUser.user_id == current_user.id).first()
     if user:
         return {"connected": True, "linkedin_id": user.linkedin_id}
     return {"connected": False}
@@ -91,8 +98,8 @@ def status(db: Session = Depends(get_db)):
 
 # 🔹 Disconnect LinkedIn account
 @router.delete("/disconnect")
-def disconnect(db: Session = Depends(get_db)):
-    user = db.query(LinkedInUser).first()
+def disconnect(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = db.query(LinkedInUser).filter(LinkedInUser.user_id == current_user.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="No LinkedIn account connected.")
     db.delete(user)
@@ -162,8 +169,9 @@ async def post(
     text: str = Form(...),
     image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    user = db.query(LinkedInUser).first()
+    user = db.query(LinkedInUser).filter(LinkedInUser.user_id == current_user.id).first()
     if not user:
         raise HTTPException(
             status_code=404,

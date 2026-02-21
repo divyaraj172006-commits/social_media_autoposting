@@ -361,22 +361,24 @@ function Dashboard() {
     const generateContent = async () => {
         if (!topic.trim()) { showStatus("⚠️ Enter a topic first!", "error"); return; }
         setLoading(true);
-        try { const res = await axios.post(`${API}/content/generate`, { topic, tone, length }); setGeneratedText(res.data.generated_text); showStatus("✨ Content generated!", "success"); }
+        const token = localStorage.getItem("token");
+        try { const res = await axios.post(`${API}/content/generate`, { topic, tone, length }, { headers: { Authorization: `Bearer ${token}` } }); setGeneratedText(res.data.generated_text); showStatus("✨ Content generated!", "success"); }
         catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); }
         setLoading(false);
     };
     const clearContent = () => { setGeneratedText(""); showStatus("🗑️ Cleared", "info"); };
-    const loginLinkedIn = async () => { try { const res = await axios.get(`${API}/linkedin/login`); window.location.href = res.data.auth_url; } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
-    const disconnectLinkedIn = async () => { if (!window.confirm("Disconnect LinkedIn?")) return; try { await axios.delete(`${API}/linkedin/disconnect`); setLinkedinConnected(false); showStatus("🔓 LinkedIn disconnected", "info"); } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
-    const loginTwitter = async () => { try { const res = await axios.get(`${API}/twitter/login`); window.location.href = res.data.auth_url; } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
-    const disconnectTwitter = async () => { if (!window.confirm("Disconnect Twitter/X?")) return; try { await axios.delete(`${API}/twitter/disconnect`); setTwitterConnected(false); setTwitterScreenName(""); showStatus("🔓 Twitter disconnected", "info"); } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
+    const loginLinkedIn = async () => { try { const token = localStorage.getItem("token"); const res = await axios.get(`${API}/linkedin/login`, { headers: { Authorization: `Bearer ${token}` } }); window.location.href = res.data.auth_url; } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
+    const disconnectLinkedIn = async () => { if (!window.confirm("Disconnect LinkedIn?")) return; try { const token = localStorage.getItem("token"); await axios.delete(`${API}/linkedin/disconnect`, { headers: { Authorization: `Bearer ${token}` } }); setLinkedinConnected(false); showStatus("🔓 LinkedIn disconnected", "info"); } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
+    const loginTwitter = async () => { try { const token = localStorage.getItem("token"); const res = await axios.get(`${API}/twitter/login`, { headers: { Authorization: `Bearer ${token}` } }); window.location.href = res.data.auth_url; } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
+    const disconnectTwitter = async () => { if (!window.confirm("Disconnect Twitter/X?")) return; try { const token = localStorage.getItem("token"); await axios.delete(`${API}/twitter/disconnect`, { headers: { Authorization: `Bearer ${token}` } }); setTwitterConnected(false); setTwitterScreenName(""); showStatus("🔓 Twitter disconnected", "info"); } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
     const handleImageSelect = (e) => { const file = e.target.files[0]; if (!file) return; if (!file.type.startsWith("image/")) { showStatus("⚠️ Select a valid image", "error"); return; } if (file.size > 10 * 1024 * 1024) { showStatus("⚠️ Max 10MB", "error"); return; } setSelectedImage(file); setImagePreview(URL.createObjectURL(file)); showStatus("🖼️ Image attached!", "success"); };
     const removeImage = () => { setSelectedImage(null); if (imagePreview) URL.revokeObjectURL(imagePreview); setImagePreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; };
     const handleGenerateImage = async () => {
         if (!imagePrompt.trim()) { showStatus("⚠️ Enter an image prompt first!", "error"); return; }
         setGeneratingImage(true);
+        const token = localStorage.getItem("token");
         try {
-            const res = await axios.post(`${API}/content/generate-image`, { prompt: imagePrompt });
+            const res = await axios.post(`${API}/content/generate-image`, { prompt: imagePrompt }, { headers: { Authorization: `Bearer ${token}` } });
             let base64Data = res.data.image_base64; let fileObj = null;
             if (base64Data) { const fetchRes = await fetch(base64Data); const blob = await fetchRes.blob(); fileObj = new File([blob], "generated_image.jpg", { type: "image/jpeg" }); }
             else if (res.data.image_url) { const imageRes = await fetch(res.data.image_url); const blob = await imageRes.blob(); fileObj = new File([blob], "generated_image.jpg", { type: "image/jpeg" }); base64Data = res.data.image_url; }
@@ -389,7 +391,8 @@ function Dashboard() {
         const targets = []; if (postTo.linkedin && linkedinConnected) targets.push("linkedin"); if (postTo.twitter && twitterConnected) targets.push("twitter");
         if (targets.length === 0) { showStatus("⚠️ Select at least one connected platform!", "error"); return; }
         setPosting(true); const results = [];
-        for (const platform of targets) { try { const formData = new FormData(); formData.append("text", generatedText); if (selectedImage) formData.append("image", selectedImage); const res = await axios.post(`${API}/${platform}/post`, formData, { headers: { "Content-Type": "multipart/form-data" } }); results.push(`✅ ${platform}: ${res.data.message}`); } catch (err) { results.push(`❌ ${platform}: ${err.response?.data?.detail || err.message}`); } }
+        const token = localStorage.getItem("token");
+        for (const platform of targets) { try { const formData = new FormData(); formData.append("text", generatedText); if (selectedImage) formData.append("image", selectedImage); const res = await axios.post(`${API}/${platform}/post`, formData, { headers: { "Content-Type": "multipart/form-data", "Authorization": `Bearer ${token}` } }); results.push(`✅ ${platform}: ${res.data.message}`); } catch (err) { results.push(`❌ ${platform}: ${err.response?.data?.detail || err.message}`); } }
         showStatus(results.join("  •  "), results.some(r => r.startsWith("❌")) ? "error" : "success"); if (!results.some(r => r.startsWith("❌"))) removeImage(); setPosting(false);
     };
     const copyToClipboard = () => { navigator.clipboard.writeText(generatedText); showStatus("📋 Copied!", "info"); };
