@@ -313,8 +313,8 @@ function Dashboard() {
     const [statusType, setStatusType] = useState("success");
     const [imagePrompt, setImagePrompt] = useState("");
     const [generatingImage, setGeneratingImage] = useState(false);
-    const [selectedImage, setSelectedImage] = useState(null);
-    const [imagePreview, setImagePreview] = useState(null);
+    const [selectedImages, setSelectedImages] = useState([]); // array of File
+    const [imagePreviews, setImagePreviews] = useState([]); // array of preview URLs / base64
     const [posting, setPosting] = useState(false);
     const [charCount, setCharCount] = useState(0);
     const [postTo, setPostTo] = useState({ linkedin: true, twitter: false });
@@ -371,8 +371,46 @@ function Dashboard() {
     const disconnectLinkedIn = async () => { if (!window.confirm("Disconnect LinkedIn?")) return; try { const token = localStorage.getItem("token"); await axios.delete(`${API}/linkedin/disconnect`, { headers: { Authorization: `Bearer ${token}` } }); setLinkedinConnected(false); showStatus("🔓 LinkedIn disconnected", "info"); } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
     const loginTwitter = async () => { try { const token = localStorage.getItem("token"); const res = await axios.get(`${API}/twitter/login`, { headers: { Authorization: `Bearer ${token}` } }); window.location.href = res.data.auth_url; } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
     const disconnectTwitter = async () => { if (!window.confirm("Disconnect Twitter/X?")) return; try { const token = localStorage.getItem("token"); await axios.delete(`${API}/twitter/disconnect`, { headers: { Authorization: `Bearer ${token}` } }); setTwitterConnected(false); setTwitterScreenName(""); showStatus("🔓 Twitter disconnected", "info"); } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); } };
-    const handleImageSelect = (e) => { const file = e.target.files[0]; if (!file) return; if (!file.type.startsWith("image/")) { showStatus("⚠️ Select a valid image", "error"); return; } if (file.size > 10 * 1024 * 1024) { showStatus("⚠️ Max 10MB", "error"); return; } setSelectedImage(file); setImagePreview(URL.createObjectURL(file)); showStatus("🖼️ Image attached!", "success"); };
-    const removeImage = () => { setSelectedImage(null); if (imagePreview) URL.revokeObjectURL(imagePreview); setImagePreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; };
+    const handleImageSelect = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+        const validFiles = [];
+        const previews = [];
+        for (const file of files) {
+            if (!file.type.startsWith("image/")) { showStatus(`⚠️ Skipped non-image: ${file.name}`, "error"); continue; }
+            if (file.size > 10 * 1024 * 1024) { showStatus(`⚠️ Skipped (>${10}MB): ${file.name}`, "error"); continue; }
+            validFiles.push(file);
+            previews.push(URL.createObjectURL(file));
+        }
+        if (validFiles.length === 0) return;
+        setSelectedImages(prev => [...prev, ...validFiles]);
+        setImagePreviews(prev => [...prev, ...previews]);
+        showStatus("🖼️ Image(s) attached!", "success");
+        // clear input so same file can be selected again
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    const removeImage = (index) => {
+        setSelectedImages(prev => {
+            const next = [...prev];
+            next.splice(index, 1);
+            return next;
+        });
+        setImagePreviews(prev => {
+            if (!prev[index]) return prev;
+            try { URL.revokeObjectURL(prev[index]); } catch (e) {}
+            const next = [...prev];
+            next.splice(index, 1);
+            return next;
+        });
+    };
+
+    const clearAllImages = () => {
+        imagePreviews.forEach(p => { try { URL.revokeObjectURL(p); } catch (e) {} });
+        setSelectedImages([]);
+        setImagePreviews([]);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
     const handleGenerateImage = async () => {
         if (!imagePrompt.trim()) { showStatus("⚠️ Enter an image prompt first!", "error"); return; }
         setGeneratingImage(true);
@@ -382,7 +420,10 @@ function Dashboard() {
             let base64Data = res.data.image_base64; let fileObj = null;
             if (base64Data) { const fetchRes = await fetch(base64Data); const blob = await fetchRes.blob(); fileObj = new File([blob], "generated_image.jpg", { type: "image/jpeg" }); }
             else if (res.data.image_url) { const imageRes = await fetch(res.data.image_url); const blob = await imageRes.blob(); fileObj = new File([blob], "generated_image.jpg", { type: "image/jpeg" }); base64Data = res.data.image_url; }
-            setSelectedImage(fileObj); setImagePreview(base64Data); showStatus("🎨 Image generated!", "success");
+            // Append generated image to arrays
+            if (fileObj) setSelectedImages(prev => [...prev, fileObj]);
+            setImagePreviews(prev => [...prev, base64Data]);
+            showStatus("🎨 Image generated!", "success");
         } catch (err) { showStatus("❌ " + (err.response?.data?.detail || err.message), "error"); }
         setGeneratingImage(false);
     };
@@ -392,8 +433,25 @@ function Dashboard() {
         if (targets.length === 0) { showStatus("⚠️ Select at least one connected platform!", "error"); return; }
         setPosting(true); const results = [];
         const token = localStorage.getItem("token");
-        for (const platform of targets) { try { const formData = new FormData(); formData.append("text", generatedText); if (selectedImage) formData.append("image", selectedImage); const res = await axios.post(`${API}/${platform}/post`, formData, { headers: { "Content-Type": "multipart/form-data", "Authorization": `Bearer ${token}` } }); results.push(`✅ ${platform}: ${res.data.message}`); } catch (err) { results.push(`❌ ${platform}: ${err.response?.data?.detail || err.message}`); } }
-        showStatus(results.join("  •  "), results.some(r => r.startsWith("❌")) ? "error" : "success"); if (!results.some(r => r.startsWith("❌"))) removeImage(); setPosting(false);
+        for (const platform of targets) {
+            try {
+                const formData = new FormData();
+                formData.append("text", generatedText);
+                // append multiple images (backend expects 'images')
+                if (selectedImages && selectedImages.length > 0) {
+                    for (const file of selectedImages) {
+                        formData.append("images", file);
+                    }
+                }
+                const res = await axios.post(`${API}/${platform}/post`, formData, { headers: { "Content-Type": "multipart/form-data", "Authorization": `Bearer ${token}` } });
+                results.push(`✅ ${platform}: ${res.data.message}`);
+            } catch (err) {
+                results.push(`❌ ${platform}: ${err.response?.data?.detail || err.message}`);
+            }
+        }
+        showStatus(results.join("  •  "), results.some(r => r.startsWith("❌")) ? "error" : "success");
+        if (!results.some(r => r.startsWith("❌"))) clearAllImages();
+        setPosting(false);
     };
     const copyToClipboard = () => { navigator.clipboard.writeText(generatedText); showStatus("📋 Copied!", "info"); };
 
@@ -649,9 +707,15 @@ function Dashboard() {
                             onClick={handleGenerateImage} disabled={generatingImage}
                             style={{ padding: "0 22px", fontSize: 13, fontWeight: 600, color: "#fff", background: "linear-gradient(135deg, #4facfe, #00f2fe)", border: "none", borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", minWidth: 110, opacity: generatingImage ? 0.7 : 1, boxShadow: "0 4px 16px rgba(79,172,254,0.25)" }}
                         >{generatingImage ? <span style={S.spinner} /> : "🎨 Generate"}</motion.button>
+
+                        {/* Always-visible Add Image button to open file picker */}
+                        <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                            onClick={() => fileInputRef.current?.click()}
+                            style={{ padding: "0 18px", fontSize: 13, fontWeight: 600, color: "#fff", background: "linear-gradient(135deg, #f093fb, #f5576c)", border: "none", borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", minWidth: 110, boxShadow: "0 4px 16px rgba(240,147,251,0.25)" }}
+                        >📎 Add Image</motion.button>
                     </div>
 
-                    {!imagePreview ? (
+                    {imagePreviews.length === 0 ? (
                         <motion.div whileHover={{ borderColor: "rgba(79,172,254,0.5)", background: "rgba(79,172,254,0.04)" }}
                             onClick={() => fileInputRef.current?.click()}
                             style={{ border: "2px dashed rgba(79,172,254,0.2)", borderRadius: 16, padding: "32px 16px", textAlign: "center", cursor: "pointer", background: "rgba(255,255,255,0.02)", transition: "all 0.3s" }}
@@ -667,19 +731,25 @@ function Dashboard() {
                             <div style={{ fontSize: 11, color: "#4a5568", marginTop: 4 }}>JPG, PNG, GIF — Max 10MB</div>
                         </motion.div>
                     ) : (
-                        <div style={{ position: "relative", borderRadius: 14, overflow: "hidden", border: "1px solid rgba(79,172,254,0.15)" }}>
-                            <img src={imagePreview} alt="Preview" style={{ width: "100%", maxHeight: 250, objectFit: "contain", display: "block", background: "rgba(0,0,0,0.2)" }} />
-                            <div style={{ position: "absolute", top: 0, right: 0, padding: 8 }}>
-                                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={removeImage}
-                                    style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#fff", background: "rgba(245,87,108,0.85)", border: "none", borderRadius: 10, cursor: "pointer", backdropFilter: "blur(4px)" }}>✕ Remove</motion.button>
-                            </div>
-                            <div style={{ padding: "8px 14px", fontSize: 11, color: "#64748b", background: "rgba(255,255,255,0.02)", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                📎 {selectedImage?.name || "Generated Image"}
-                                <span style={{ fontSize: 10, color: "#4a5568", background: "rgba(79,172,254,0.08)", padding: "2px 8px", borderRadius: 8 }}>{selectedImage ? (selectedImage.size / 1024).toFixed(0) : 0} KB</span>
-                            </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+                            {imagePreviews.map((src, i) => (
+                                <div key={i} style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: "1px solid rgba(79,172,254,0.08)", background: "rgba(0,0,0,0.16)" }}>
+                                    <img src={src} alt={`preview-${i}`} style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
+                                    <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8 }}>
+                                        <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => removeImage(i)}
+                                            style={{ padding: "6px 10px", fontSize: 12, fontWeight: 600, color: "#fff", background: "rgba(245,87,108,0.85)", border: "none", borderRadius: 10, cursor: "pointer" }}>✕</motion.button>
+                                        <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} onClick={() => fileInputRef.current?.click()}
+                                            style={{ padding: "6px 10px", fontSize: 12, fontWeight: 600, color: "#fff", background: "linear-gradient(135deg, #4facfe, #00f2fe)", border: "none", borderRadius: 10, cursor: "pointer" }}>Replace</motion.button>
+                                    </div>
+                                    <div style={{ padding: "8px 12px", fontSize: 11, color: "#94a3b8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{selectedImages[i]?.name || `image-${i+1}`}</span>
+                                        <span style={{ fontSize: 10, color: "#4a5568", background: "rgba(79,172,254,0.08)", padding: "2px 8px", borderRadius: 8 }}>{selectedImages[i] ? Math.round(selectedImages[i].size / 1024) : 0} KB</span>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
-                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} style={{ display: "none" }} />
+                    <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageSelect} style={{ display: "none" }} />
                 </motion.div>
 
                 {/* ════ POST EDITOR CARD ══════════════════════ */}
@@ -715,7 +785,7 @@ function Dashboard() {
 
                     {/* Preview */}
                     <AnimatePresence>
-                        {(generatedText || imagePreview) && (
+                        {(generatedText || imagePreviews.length > 0) && (
                             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }}
                                 style={{ borderRadius: 14, marginBottom: 16, overflow: "hidden", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}
                             >
@@ -731,7 +801,13 @@ function Dashboard() {
                                         </div>
                                     </div>
                                     {generatedText && <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7, marginBottom: 10, whiteSpace: "pre-wrap" }}>{generatedText.length > 180 ? generatedText.substring(0, 180) + "..." : generatedText}</div>}
-                                    {imagePreview && <img src={imagePreview} alt="Post" style={{ width: "100%", maxHeight: 170, objectFit: "cover", borderRadius: 10, marginBottom: 10 }} />}
+                                    {imagePreviews.length > 0 && (
+                                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 10 }}>
+                                            {imagePreviews.map((src, idx) => (
+                                                <img key={idx} src={src} alt={`post-preview-${idx}`} style={{ width: "100%", maxHeight: 170, objectFit: "cover", borderRadius: 10 }} />
+                                            ))}
+                                        </div>
+                                    )}
                                     <div style={{ display: "flex", justifyContent: "space-around", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "#4a5568" }}>
                                         <span>👍 Like</span><span>💬 Comment</span><span>🔄 Repost</span><span>📤 Send</span>
                                     </div>

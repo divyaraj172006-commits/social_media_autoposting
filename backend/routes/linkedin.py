@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from urllib.parse import quote
-from typing import Optional
+from typing import Optional, List
 import requests
 import os
 
 from db import get_db
-from models import LinkedInUser
+from models import LinkedInUser, User
 from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
+from routes.auth import get_current_user
 
 router = APIRouter(prefix="/linkedin", tags=["LinkedIn"])
 
@@ -17,14 +18,17 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://social-media-autoposting.verce
 
 # 🔹 Step 1: Login — redirects user to LinkedIn OAuth
 @router.get("/login")
-def login():
+def login(current_user: User = Depends(get_current_user)):
+    # include the logged-in user's email as state so the callback can link the account
     encoded_redirect = quote(REDIRECT_URI, safe="")
+    state = quote(current_user.email, safe="")
     url = (
         "https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
         f"&client_id={CLIENT_ID}"
         f"&redirect_uri={encoded_redirect}"
         "&scope=openid%20profile%20w_member_social"
+        f"&state={state}"
         "&prompt=login"
     )
     print(f"[DEBUG] OAuth URL: {url}")
@@ -34,7 +38,7 @@ def login():
 
 # 🔹 Step 2: Callback — LinkedIn redirects here after user approves
 @router.get("/callback")
-def callback(code: str, db: Session = Depends(get_db)):
+def callback(code: str, state: Optional[str] = None, db: Session = Depends(get_db)):
     try:
         print(f"[DEBUG] Callback received with code: {code[:10]}...")
         # Exchange code for access token
@@ -64,12 +68,15 @@ def callback(code: str, db: Session = Depends(get_db)):
         if not linkedin_id:
             return RedirectResponse(f"{FRONTEND_URL}?linkedin=error&message=no_user_id")
 
-        # Save or update user in DB
+        # Save or update user in DB. If state was provided (email), link to that user.
         existing_user = db.query(LinkedInUser).filter(LinkedInUser.linkedin_id == linkedin_id).first()
         if existing_user:
             existing_user.access_token = access_token
         else:
-            user = LinkedInUser(linkedin_id=linkedin_id, access_token=access_token)
+            linked_user = None
+            if state:
+                linked_user = db.query(User).filter(User.email == state).first()
+            user = LinkedInUser(linkedin_id=linkedin_id, access_token=access_token, user_id=(linked_user.id if linked_user else None))
             db.add(user)
         db.commit()
 
@@ -82,20 +89,21 @@ def callback(code: str, db: Session = Depends(get_db)):
 
 # 🔹 Check if a LinkedIn account is connected
 @router.get("/status")
-def status(db: Session = Depends(get_db)):
-    user = db.query(LinkedInUser).first()
-    if user:
-        return {"connected": True, "linkedin_id": user.linkedin_id}
+def status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Return connection status for the authenticated user only
+    linked = db.query(LinkedInUser).filter(LinkedInUser.user_id == current_user.id).first()
+    if linked:
+        return {"connected": True, "linkedin_id": linked.linkedin_id}
     return {"connected": False}
 
 
 # 🔹 Disconnect LinkedIn account
 @router.delete("/disconnect")
-def disconnect(db: Session = Depends(get_db)):
-    user = db.query(LinkedInUser).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="No LinkedIn account connected.")
-    db.delete(user)
+def disconnect(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    linked = db.query(LinkedInUser).filter(LinkedInUser.user_id == current_user.id).first()
+    if not linked:
+        raise HTTPException(status_code=404, detail="No LinkedIn account connected for this user.")
+    db.delete(linked)
     db.commit()
     return {"message": "LinkedIn account disconnected successfully."}
 
@@ -160,18 +168,19 @@ def upload_image_binary(upload_url: str, image_bytes: bytes, access_token: str):
 @router.post("/post")
 async def post(
     text: str = Form(...),
-    image: Optional[UploadFile] = File(None),
+    images: Optional[List[UploadFile]] = File(None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user = db.query(LinkedInUser).first()
-    if not user:
+    linked = db.query(LinkedInUser).filter(LinkedInUser.user_id == current_user.id).first()
+    if not linked:
         raise HTTPException(
             status_code=404,
             detail="No LinkedIn account connected. Please connect first.",
         )
 
-    access_token = user.access_token
-    linkedin_id = user.linkedin_id
+    access_token = linked.access_token
+    linkedin_id = linked.linkedin_id
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -179,29 +188,23 @@ async def post(
         "Content-Type": "application/json",
     }
 
-    # Build the share content based on whether an image is provided
-    if image and image.filename:
-        # --- Image + Text Post ---
-        print(f"[DEBUG] Uploading image: {image.filename} ({image.content_type})")
+    # Build the share content based on whether images are provided
+    if images and len(images) > 0:
+        media_entries = []
+        for img in images:
+            if not img or not img.filename:
+                continue
+            print(f"[DEBUG] Uploading image: {img.filename} ({img.content_type})")
+            upload_url, asset = register_image_upload(access_token, linkedin_id)
+            image_bytes = await img.read()
+            upload_image_binary(upload_url, image_bytes, access_token)
+            media_entries.append({"status": "READY", "media": asset})
 
-        # Step 1: Register upload
-        upload_url, asset = register_image_upload(access_token, linkedin_id)
-
-        # Step 2: Upload image binary
-        image_bytes = await image.read()
-        upload_image_binary(upload_url, image_bytes, access_token)
-
-        # Step 3: Create post with image
         share_content = {
             "com.linkedin.ugc.ShareContent": {
                 "shareCommentary": {"text": text},
-                "shareMediaCategory": "IMAGE",
-                "media": [
-                    {
-                        "status": "READY",
-                        "media": asset,
-                    }
-                ],
+                "shareMediaCategory": "IMAGE" if media_entries else "NONE",
+                "media": media_entries,
             }
         }
     else:

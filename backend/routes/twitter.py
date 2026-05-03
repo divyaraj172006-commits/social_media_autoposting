@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from urllib.parse import quote
-from typing import Optional
+from typing import Optional, List
 from requests_oauthlib import OAuth1Session
 import requests
 import os
@@ -159,7 +159,7 @@ def upload_media(oauth_session, image_bytes: bytes) -> str:
 @router.post("/post")
 async def post(
     text: str = Form(...),
-    image: Optional[UploadFile] = File(None),
+    images: Optional[List[UploadFile]] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -177,11 +177,16 @@ async def post(
     # Build tweet payload
     tweet_payload = {"text": text}
 
-    # Upload image if provided
-    if image and image.filename:
-        image_bytes = await image.read()
-        media_id = upload_media(oauth, image_bytes)
-        tweet_payload["media"] = {"media_ids": [media_id]}
+    # Upload images if provided (support multiple)
+    if images:
+        media_ids = []
+        for img in images:
+            if img and img.filename:
+                image_bytes = await img.read()
+                media_id = upload_media(oauth, image_bytes)
+                media_ids.append(media_id)
+        if media_ids:
+            tweet_payload["media"] = {"media_ids": media_ids}
 
     # Post tweet via v2 API
     url = "https://api.twitter.com/2/tweets"
